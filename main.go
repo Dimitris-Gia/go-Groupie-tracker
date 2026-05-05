@@ -8,6 +8,7 @@ import (
 	"log"
 	"net/http"
 
+	"groupie-tracker/api"
 	"groupie-tracker/handlers"
 )
 
@@ -22,6 +23,9 @@ func main() {
 	http.HandleFunc("/artist/", handlers.ArtistHandler)
 	// Live search endpoint: returns JSON results and suggestions
 	http.HandleFunc("/search", handlers.SearchHandler)
+
+	// Pre-warm the geocode cache in the background so map pages load instantly
+	go api.PrewarmGeocodeCache()
 
 	log.Println("Server starting on http://localhost:8080")
 	log.Fatal(http.ListenAndServe(":8080", nil))

@@ -126,6 +126,36 @@ func HomeHandler(w http.ResponseWriter, r *http.Request) {
 // It fetches the artist, their locations, dates, and relations, then renders artist.html.
 // An optional "tab" query param (dates|locations|relations) controls which section is shown.
 func ArtistHandler(w http.ResponseWriter, r *http.Request) {
+	// Lightweight JSON endpoint used by the map UI.
+	// Path: /artist/{id}/coords
+	if strings.HasSuffix(r.URL.Path, "/coords") {
+		idStr := strings.TrimPrefix(r.URL.Path, "/artist/")
+		idStr = strings.TrimSuffix(idStr, "/coords")
+		idStr = strings.Trim(idStr, "/")
+		id, err := strconv.Atoi(idStr)
+		if err != nil || id < 1 {
+			http.Error(w, "Invalid artist ID", http.StatusBadRequest)
+			return
+		}
+
+		locations, err := api.GetLocations(id)
+		if err != nil {
+			http.Error(w, "Could not load locations", http.StatusInternalServerError)
+			return
+		}
+
+		coords := make([]api.GeoCoord, 0, len(locations.Locations))
+		for _, loc := range locations.Locations {
+			if coord, err := api.Geocode(loc); err == nil {
+				coords = append(coords, coord)
+			}
+		}
+
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(coords)
+		return
+	}
+
 	// Extract the numeric ID from the URL path
 	idStr := strings.TrimPrefix(r.URL.Path, "/artist/")
 	id, err := strconv.Atoi(idStr)
@@ -149,6 +179,10 @@ func ArtistHandler(w http.ResponseWriter, r *http.Request) {
 		renderError(w, http.StatusInternalServerError, "Could not load dates")
 		return
 	}
+	for i := range dates.Dates {
+		raw := strings.TrimSpace(dates.Dates[i])
+		dates.Dates[i] = strings.TrimPrefix(raw, "*")
+	}
 	relations, err := api.GetRelations(id)
 	if err != nil {
 		renderError(w, http.StatusInternalServerError, "Could not load relations")
@@ -163,7 +197,6 @@ func ArtistHandler(w http.ResponseWriter, r *http.Request) {
 	tmpl.Execute(w, ArtistPageData{Artist: artist, Locations: locations, Dates: dates, Relations: relations})
 }
 
-// addSuggestion appends a suggestion to the list if it hasn't been seen before.
 // The seen map prevents duplicate suggestions across different match types.
 func addSuggestion(suggestions *[]SearchSuggestion, seen map[string]bool, text, typ string) {
 	key := text + "|" + typ
@@ -246,6 +279,16 @@ func SearchHandler(w http.ResponseWriter, r *http.Request) {
 			}
 		}
 	}
+
+	// Sort suggestions: entries that start with the query come before those that only contain it
+	sort.SliceStable(response.Suggestions, func(i, j int) bool {
+		iStarts := strings.HasPrefix(strings.ToLower(response.Suggestions[i].Text), query)
+		jStarts := strings.HasPrefix(strings.ToLower(response.Suggestions[j].Text), query)
+		if iStarts != jStarts {
+			return iStarts
+		}
+		return false
+	})
 
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(response)

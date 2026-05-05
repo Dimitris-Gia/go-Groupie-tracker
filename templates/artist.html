@@ -5,11 +5,13 @@
     <title>{{.Artist.Name}} - Groupie-Tracker</title>
     <link rel="stylesheet" type="text/css" href="/static/styles.css">
     <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:opsz,wght,FILL,GRAD@24,400,0,0&icon_names=search" />
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
+    <style>#map { height: 420px; border-radius: 10px; }</style>
 </head>
 <body>
     <div class="upper-section">
         <div class="title">
-            <a href="/" title="Home"><h1>Artists</h1></a>
+            <a href="/" title="Home"><h1>Groupie Tracker</h1></a>
         </div>
     </div>
 
@@ -29,6 +31,7 @@
                 <a href="/artist/{{.Artist.Id}}?tab=dates"><p>Concert Dates</p></a>
                 <a href="/artist/{{.Artist.Id}}?tab=locations"><p>Concert Locations</p></a>
                 <a href="/artist/{{.Artist.Id}}?tab=relations"><p>Concert Dates And Locations</p></a>
+                <a href="/artist/{{.Artist.Id}}?tab=map"><p>Concert Map</p></a>
                 <a href="/artist/{{.Artist.Id}}"><p>All Info</p></a>
             </div>
         </div>
@@ -36,11 +39,11 @@
         <div class="right-section">
             <div id="section-dates" class="filter-group">
                 <h4>Concert Dates</h4>
-                <ul>
+                <div>
                     {{range .Dates.Dates}}
-                        <li>{{.}}</li>
+                        <p>{{.}}</p>
                     {{end}}
-                </ul>
+                </div>
             </div>
 
             <div id="section-locations" class="filter-group">
@@ -66,16 +69,55 @@
                     {{end}}
                 </ul>
             </div>
+
+            <div id="section-map" class="filter-group">
+                <h4>Concert Map</h4>
+                <p id="map-status"></p>
+                <div id="map"></div>
+            </div>
         </div>
     </div>
 
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
     <script>
         const tab = new URLSearchParams(window.location.search).get("tab");
-        const sections = ["dates", "locations", "relations"];
+        const sections = ["dates", "locations", "relations", "map"];
         if (tab && sections.includes(tab)) {
             sections.forEach(s => {
                 document.getElementById("section-" + s).style.display = s === tab ? "" : "none";
             });
+        }
+
+        if (!tab || tab === "map") {
+            const statusEl = document.getElementById("map-status");
+            statusEl.textContent = "Loading map coordinates...";
+
+            const map = L.map('map').setView([20, 0], 2);
+            L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+                attribution: '© <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
+            }).addTo(map);
+
+            fetch(`/artist/{{.Artist.Id}}/coords`)
+                .then(r => {
+                    if (!r.ok) throw new Error("coords request failed");
+                    return r.json();
+                })
+                .then(coords => {
+                    const bounds = [];
+                    coords.forEach(c => {
+                        L.marker([c.lat, c.lng]).addTo(map).bindPopup(c.name);
+                        bounds.push([c.lat, c.lng]);
+                    });
+                    if (bounds.length) {
+                        map.fitBounds(bounds, {padding: [40, 40]});
+                        statusEl.textContent = "";
+                    } else {
+                        statusEl.textContent = "No coordinates available for this artist.";
+                    }
+                })
+                .catch(() => {
+                    statusEl.textContent = "Could not load map coordinates.";
+                });
         }
     </script>
 </body>

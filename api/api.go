@@ -7,6 +7,11 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	neturl "net/url"
+	"strconv"
+	"strings"
+	"sync"
+	"time"
 )
 
 // Artist represents a music artist or band returned by the /api/artists endpoint.
@@ -17,7 +22,7 @@ type Artist struct {
 	Members      []string `json:"members"`
 	CreationDate int      `json:"creationDate"`
 	FirstAlbum   string   `json:"firstAlbum"`
-	Locations    string   `json:"locations"` // URL to the artist's locations endpoint
+	Locations    string   `json:"locations"`    // URL to the artist's locations endpoint
 	ConcertDates string   `json:"concertDates"` // URL to the artist's dates endpoint
 	Relations    string   `json:"relations"`    // URL to the artist's relations endpoint
 }
@@ -100,4 +105,108 @@ func GetAllLocations() ([]Locations, error) {
 	var all AllLocations
 	err := fetchJSON("https://groupietrackers.herokuapp.com/api/locations", &all)
 	return all.Index, err
+}
+
+// GeoCoord holds a geocoded location with its display name and coordinates.
+type GeoCoord struct {
+	Name string  `json:"name"`
+	Lat  float64 `json:"lat"`
+	Lng  float64 `json:"lng"`
+}
+
+// nominatimResult maps the fields we need from a Nominatim JSON response.
+type nominatimResult struct {
+	Lat     string `json:"lat"`
+	Lon     string `json:"lon"`
+	Display string `json:"display_name"`
+}
+
+var (
+	geocodeCache    = map[string]GeoCoord{}
+	geocodeCacheMu  sync.RWMutex
+	lastRequestTime time.Time
+	requestMu       sync.Mutex
+)
+
+// PrewarmGeocodeCache fetches all artist locations and geocodes each unique one sequentially.
+// It is intended to be called once as a goroutine at server startup so that by the time
+// a user opens an artist map page all coordinates are already in the in-memory cache.
+func PrewarmGeocodeCache() {
+	allLocs, err := GetAllLocations()
+	if err != nil {
+		return
+	}
+	seen := map[string]bool{}
+	for _, artistLoc := range allLocs {
+		for _, loc := range artistLoc.Locations {
+			if seen[loc] {
+				continue
+			}
+			seen[loc] = true
+			Geocode(loc) // result is cached internally; error is intentionally ignored
+		}
+	}
+}
+
+// Geocode converts a raw location string (e.g. "north_carolina-usa") to a GeoCoord.
+// It cleans the string, queries the Nominatim API, and returns the first result.
+// Results are cached to avoid repeated API calls and respect rate limits.
+func Geocode(location string) (GeoCoord, error) {
+	// Check cache first
+	geocodeCacheMu.RLock()
+	if coord, ok := geocodeCache[location]; ok {
+		geocodeCacheMu.RUnlock()
+		return coord, nil
+	}
+	geocodeCacheMu.RUnlock()
+
+	// Rate limit: ensure at least 1 second between requests
+	requestMu.Lock()
+	if elapsed := time.Since(lastRequestTime); elapsed < time.Second {
+		time.Sleep(time.Second - elapsed)
+	}
+	lastRequestTime = time.Now()
+	requestMu.Unlock()
+
+	// Convert API format "city-country" to "city, country" for better geocoding
+	// Replace underscores with spaces, then replace the dash with comma+space
+	query := strings.ReplaceAll(location, "_", " ")
+	if idx := strings.LastIndex(query, "-"); idx != -1 {
+		query = query[:idx] + ", " + query[idx+1:]
+	}
+	url := "https://nominatim.openstreetmap.org/search?q=" + neturl.QueryEscape(query) + "&format=json&limit=1"
+
+	req, err := http.NewRequest("GET", url, nil)
+	if err != nil {
+		return GeoCoord{}, err
+	}
+	// Nominatim requires a User-Agent header
+	req.Header.Set("User-Agent", "groupie-tracker/1.0")
+
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		return GeoCoord{}, err
+	}
+	defer resp.Body.Close()
+
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return GeoCoord{}, err
+	}
+
+	var results []nominatimResult
+	if err := json.Unmarshal(body, &results); err != nil || len(results) == 0 {
+		return GeoCoord{}, fmt.Errorf("no results for %q", query)
+	}
+
+	lat, _ := strconv.ParseFloat(results[0].Lat, 64)
+	lng, _ := strconv.ParseFloat(results[0].Lon, 64)
+	coord := GeoCoord{Name: query, Lat: lat, Lng: lng}
+
+	// Cache the result
+	geocodeCacheMu.Lock()
+	geocodeCache[location] = coord
+	geocodeCacheMu.Unlock()
+
+	return coord, nil
 }

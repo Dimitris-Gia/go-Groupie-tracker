@@ -173,3 +173,65 @@ maxInput.addEventListener("input", () => {
 
 // Initialise the Album Year fill bar on page load
 updateProgress();
+
+// --- Custom Location Dropdown ---
+(function initCustomLocationSelect() {
+    const root = document.getElementById("locationCustom");
+    const nativeSelect = document.getElementById("location-select");
+
+    if (!root || !nativeSelect) return;
+
+    const trigger = root.querySelector(".custom-select-trigger");
+    const valueEl = root.querySelector(".custom-select-value");
+    const options = Array.from(root.querySelectorAll(".custom-select-option"));
+
+    if (!trigger || !valueEl || options.length === 0) return;
+
+    const closeMenu = () => {
+        root.classList.remove("is-open");
+        trigger.setAttribute("aria-expanded", "false");
+    };
+
+    const openMenu = () => {
+        root.classList.add("is-open");
+        trigger.setAttribute("aria-expanded", "true");
+    };
+
+    const selectValue = value => {
+        nativeSelect.value = value;
+
+        options.forEach(opt => {
+            const isSelected = (opt.getAttribute("data-value") || "") === value;
+            opt.classList.toggle("is-selected", isSelected);
+
+            if (isSelected) {
+                valueEl.textContent = opt.textContent.trim();
+            }
+        });
+    };
+
+    const initialValue = nativeSelect.value || "";
+    selectValue(initialValue);
+
+    trigger.addEventListener("click", () => {
+        if (root.classList.contains("is-open")) {
+            closeMenu();
+        } else {
+            openMenu();
+        }
+    });
+
+    options.forEach(opt => {
+        opt.addEventListener("click", () => {
+            const value = opt.getAttribute("data-value") || "";
+            selectValue(value);
+            closeMenu();
+        });
+    });
+
+    document.addEventListener("click", event => {
+        if (!root.contains(event.target)) {
+            closeMenu();
+        }
+    });
+})();

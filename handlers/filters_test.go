@@ -146,3 +146,110 @@ func TestFilters_Location_UnderscoreNormalised(t *testing.T) {
 		t.Errorf("expected only Eminem for 'los angeles', got %+v", result)
 	}
 }
+
+func TestFilters_YearFrom_OnlyLowerBound(t *testing.T) {
+	r := makeRequest(map[string]string{"yearFrom": "1980"})
+	result := Filters(testArtists, testLocMap, r)
+	// yearFrom without yearTo should not filter
+	if len(result) != len(testArtists) {
+		t.Errorf("expected all artists when only yearFrom is set, got %d", len(result))
+	}
+}
+
+func TestFilters_YearTo_OnlyUpperBound(t *testing.T) {
+	r := makeRequest(map[string]string{"yearTo": "1990"})
+	result := Filters(testArtists, testLocMap, r)
+	// yearTo without yearFrom should not filter
+	if len(result) != len(testArtists) {
+		t.Errorf("expected all artists when only yearTo is set, got %d", len(result))
+	}
+}
+
+func TestFilters_AlbumFrom_OnlyLowerBound(t *testing.T) {
+	r := makeRequest(map[string]string{"albumFrom": "1995"})
+	result := Filters(testArtists, testLocMap, r)
+	// albumFrom without albumTo should not filter
+	if len(result) != len(testArtists) {
+		t.Errorf("expected all artists when only albumFrom is set, got %d", len(result))
+	}
+}
+
+func TestFilters_AlbumTo_OnlyUpperBound(t *testing.T) {
+	r := makeRequest(map[string]string{"albumTo": "2000"})
+	result := Filters(testArtists, testLocMap, r)
+	// albumTo without albumFrom should not filter
+	if len(result) != len(testArtists) {
+		t.Errorf("expected all artists when only albumTo is set, got %d", len(result))
+	}
+}
+
+func TestFilters_InvalidAlbumParams_SkipsArtist(t *testing.T) {
+	r := makeRequest(map[string]string{"albumFrom": "abc", "albumTo": "2000"})
+	result := Filters(testArtists, testLocMap, r)
+	if len(result) != 0 {
+		t.Errorf("expected 0 artists for invalid album params, got %d", len(result))
+	}
+}
+
+func TestFilters_ShortFirstAlbum_SkipsArtist(t *testing.T) {
+	// Artist with a malformed FirstAlbum field (less than 4 chars)
+	artists := []api.Artist{
+		{Id: 1, Name: "BadData", FirstAlbum: "99", CreationDate: 1990, Members: []string{"A"}},
+	}
+	r := makeRequest(map[string]string{"albumFrom": "1990", "albumTo": "2000"})
+	result := Filters(artists, testLocMap, r)
+	if len(result) != 0 {
+		t.Errorf("expected 0 artists for short FirstAlbum, got %d", len(result))
+	}
+}
+
+func TestFilters_InvalidAlbumYear_SkipsArtist(t *testing.T) {
+	// Artist with non-numeric year in FirstAlbum
+	artists := []api.Artist{
+		{Id: 1, Name: "BadYear", FirstAlbum: "12-05-ABCD", CreationDate: 1990, Members: []string{"A"}},
+	}
+	r := makeRequest(map[string]string{"albumFrom": "1990", "albumTo": "2000"})
+	result := Filters(artists, testLocMap, r)
+	if len(result) != 0 {
+		t.Errorf("expected 0 artists for invalid album year, got %d", len(result))
+	}
+}
+
+func TestFilters_Members_InvalidValue(t *testing.T) {
+	v := url.Values{}
+	v.Add("members", "abc")
+	r := makeRequestMulti(v)
+	result := Filters(testArtists, testLocMap, r)
+	if len(result) != 0 {
+		t.Errorf("expected 0 artists for invalid members param, got %d", len(result))
+	}
+}
+
+func TestFilters_Location_ArtistNotInLocMap(t *testing.T) {
+	// Artist not present in locMap should be filtered out
+	artists := []api.Artist{
+		{Id: 999, Name: "NoLocations", CreationDate: 2000, Members: []string{"A"}},
+	}
+	r := makeRequest(map[string]string{"location": "london"})
+	result := Filters(artists, testLocMap, r)
+	if len(result) != 0 {
+		t.Errorf("expected 0 artists when artist not in locMap, got %d", len(result))
+	}
+}
+
+func TestFilters_CombinedFilters(t *testing.T) {
+	// Combine year, album, members, and location filters
+	v := url.Values{}
+	v.Set("yearFrom", "1990")
+	v.Set("yearTo", "2000")
+	v.Set("albumFrom", "1995")
+	v.Set("albumTo", "2000")
+	v.Add("members", "3")
+	v.Set("location", "london")
+	r := makeRequestMulti(v)
+	result := Filters(testArtists, testLocMap, r)
+	// Muse: CreationDate=1994, FirstAlbum=1999, Members=3, has london-uk
+	if len(result) != 1 || result[0].Name != "Muse" {
+		t.Errorf("expected only Muse for combined filters, got %+v", result)
+	}
+}

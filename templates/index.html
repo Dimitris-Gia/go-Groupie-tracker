@@ -10,7 +10,7 @@
     <!-- Upper section stays exactly the same -->
     <div class="upper-section">
         <div class="title">
-            <a href="/" title="Home"><h1>Artists</h1></a>
+            <a href="/" title="Home"><h1>Groupie Tracker</h1></a>
         </div>
             <div class="search" style="position: relative;">
                 <span class="search-icon material-symbols-outlined">search</span>
@@ -26,6 +26,31 @@
             <form method="get" action="/">
             <div class="filter-selector">
                 <label for="filter-select">Filters</label>
+            </div>
+
+            <div class="filter-group">
+                <h4>Location</h4>
+
+                <div class="custom-select" id="locationCustom">
+                    <button type="button" class="custom-select-trigger" aria-haspopup="listbox" aria-expanded="false">
+                        <span class="custom-select-value">All Locations</span>
+                        <span class="custom-select-arrow">▾</span>
+                    </button>
+
+                    <ul class="custom-select-menu" role="listbox" tabindex="-1">
+                        <li class="custom-select-option" data-value="">All Locations</li>
+                        {{range $.AllLocations}}
+                            <li class="custom-select-option" data-value="{{.}}">{{.}}</li>
+                        {{end}}
+                    </ul>
+                </div>
+
+                <select id="location-select" name="location" class="filter-dropdown native-hidden">
+                    <option value="">All Locations</option>
+                    {{range $.AllLocations}}
+                        <option value="{{.}}" {{if eq . $.Location}}selected{{end}}>{{.}}</option>
+                    {{end}}
+                </select>
             </div>
             
             <!-- Additional filter options you can add -->
@@ -91,22 +116,11 @@
                     <input type="checkbox" name="members" value="8"> 8 members
                 </label>
             </div>
-            <div class="filter-group">
-                <h4><label for="location-select">Location</label></h4>
-                <select id="location-select" name="location" class="filter-dropdown">
-                    <option value="">All Locations</option>
-                    {{range $.AllLocations}}
-                        <option value="{{.}}" {{if eq . $.Location}}selected{{end}}>{{.}}</option>
-                    {{end}}
-                </select>
-            </div>
             <button type="submit">Apply Filters</button>
             </form>
         </div>
         <!-- Right section: Artists grid + integrated pagination -->
-       <!-- Right section: Artists grid + integrated pagination -->
-<!-- Right section: Artists grid + integrated pagination -->
-<div class="right-section">
+            <div class="right-section">
             <div class="grid-container">
                 {{range .Artists}}
                     <div class="card">
